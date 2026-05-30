@@ -156,6 +156,39 @@ def run_sql_query(query: str, db_name: str = "default") -> str:
     except Exception as e:
         return f"SQL Error: {e}"
 
+@mcp.tool()
+async def explain_query(query: str, db_name: str = "default") -> str:
+    """
+    Runs EXPLAIN (or EXPLAIN ANALYZE for PostgreSQL) on a SELECT query
+    and returns the query execution plan. Useful for understanding
+    performance characteristics without executing the full query.
+
+    Args:
+        query: A SELECT SQL query to explain.
+        db_name: The database name as defined in config (default: "default").
+    """
+    query = query.strip()
+
+    if not query.upper().startswith("SELECT"):
+        return "Error: Only SELECT queries can be explained."
+
+    provider = get_provider(db_name)
+    db_type = provider.db_type
+
+    if db_type == "postgresql":
+        explain_query = f"EXPLAIN ANALYZE {query}"
+    elif db_type in ("mysql",):
+        explain_query = f"EXPLAIN {query}"
+    elif db_type == "sqlite":
+        explain_query = f"EXPLAIN QUERY PLAN {query}"
+    else:
+        return f"Error: EXPLAIN is not supported for '{db_type}'."
+
+    try:
+        rows = await provider.execute(explain_query)
+        return "\n".join(str(row) for row in rows)
+    except Exception as e:
+        return f"Error running EXPLAIN: {e}"
 
 def start_mcp_server(transport: Literal["sse", "stdio", "streamable-http"] = "stdio", **kwargs) -> None:
     """Start the MCP server with the given transport."""
@@ -169,3 +202,4 @@ def start_mcp_server(transport: Literal["sse", "stdio", "streamable-http"] = "st
         print("Press Ctrl+C to stop...", flush=True)
         
     mcp.run(transport=transport, **kwargs)
+
