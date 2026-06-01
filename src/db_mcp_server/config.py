@@ -10,6 +10,7 @@ class Settings:
     MCP_SERVER_HOST: str = os.getenv("MCP_SERVER_HOST", "127.0.0.1")
     MCP_SERVER_PORT: int = int(os.getenv("MCP_SERVER_PORT", "9001"))
     MCP_SERVER_PATH: str = os.getenv("MCP_SERVER_PATH", "/mcp")
+    API_KEY: str | None = os.getenv("API_KEY", None)
     
     @property
     def MCP_SERVER_URL(self) -> str:

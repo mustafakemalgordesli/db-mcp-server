@@ -36,6 +36,17 @@ Set the `DATABASES` environment variable as a JSON string to connect to multiple
 DATABASES='{"ecommerce": {"provider": "postgresql", "connection_string": "postgresql://..."}, "logs": {"provider": "sqlite", "connection_string": "sqlite:///logs.db"}}'
 ```
 
+### Security / Authentication (HTTP Transports)
+For `sse` or `streamable-http` transports, it is highly recommended to secure your MCP server with an API Key. 
+
+Set the `API_KEY` environment variable:
+```bash
+API_KEY=your_secret_api_key_here
+```
+
+When `API_KEY` is set, all incoming HTTP requests must include either an `X-API-Key: <your_secret>` header or an `Authorization: Bearer <your_secret>` header.
+> **Note:** API Key authentication only applies to HTTP transports. Standard I/O (`stdio`) connections ignore the API Key.
+
 ## Running the Server
 
 ### 1. Normal Mode (For Cursor, Claude Desktop, AI Agents)

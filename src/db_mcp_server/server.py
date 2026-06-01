@@ -172,8 +172,8 @@ async def explain_query(query: str, db_name: str = "default") -> str:
     if not query.upper().startswith("SELECT"):
         return "Error: Only SELECT queries can be explained."
 
-    provider = get_provider(db_name)
-    db_type = provider.db_type
+    provider = db_manager.get_provider(db_name)
+    db_type = provider.provider
 
     if db_type == "postgresql":
         explain_query = f"EXPLAIN ANALYZE {query}"
@@ -185,21 +185,64 @@ async def explain_query(query: str, db_name: str = "default") -> str:
         return f"Error: EXPLAIN is not supported for '{db_type}'."
 
     try:
-        rows = await provider.execute(explain_query)
-        return "\n".join(str(row) for row in rows)
+        with provider.connect() as conn:
+            result = conn.execute(text(explain_query))
+            rows = result.fetchall()
+        return "\n".join(str(tuple(row)) for row in rows)
     except Exception as e:
         return f"Error running EXPLAIN: {e}"
 
 def start_mcp_server(transport: Literal["sse", "stdio", "streamable-http"] = "stdio", **kwargs) -> None:
     """Start the MCP server with the given transport."""
-    if transport in ("sse", "streamable-http"):
-        print(f"Starting MCP Server on http://{settings.MCP_SERVER_HOST}:{settings.MCP_SERVER_PORT}{settings.MCP_SERVER_PATH}", flush=True)
-    
     db_names = list(db_manager.get_all_providers().keys())
     
-    if transport != "stdio":
-        print(f"Transport: {transport} | Databases: {', '.join(db_names)}", flush=True)
+    if transport == "stdio":
+        if settings.API_KEY:
+            print("Warning: API_KEY is set but it will be ignored in stdio mode.", flush=True)
+        mcp.run(transport=transport, **kwargs)
+        return
+
+    # HTTP Transports (sse, streamable-http)
+    print(f"Starting MCP Server on http://{settings.MCP_SERVER_HOST}:{settings.MCP_SERVER_PORT}{settings.MCP_SERVER_PATH}", flush=True)
+    print(f"Transport: {transport} | Databases: {', '.join(db_names)}", flush=True)
+    
+    if settings.API_KEY:
+        print("Authentication: Enabled (API Key required)", flush=True)
         print("Press Ctrl+C to stop...", flush=True)
         
-    mcp.run(transport=transport, **kwargs)
+        import uvicorn
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.responses import JSONResponse
+
+        class APIKeyMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                auth_header = request.headers.get("Authorization")
+                api_key_header = request.headers.get("X-API-Key")
+                
+                # Check Bearer token or X-API-Key
+                if auth_header == f"Bearer {settings.API_KEY}" or api_key_header == settings.API_KEY:
+                    return await call_next(request)
+                    
+                return JSONResponse({"error": "Unauthorized: Invalid or missing API Key"}, status_code=401)
+
+        # Get the underlying Starlette app based on transport
+        if transport == "sse":
+            app = mcp.sse_app()
+        else:
+            app = mcp.streamable_http_app()
+            
+        # Inject API Key middleware
+        app.add_middleware(APIKeyMiddleware)
+        
+        # Run uvicorn directly to bypass mcp.run() which creates a new app
+        uvicorn.run(
+            app, 
+            host=settings.MCP_SERVER_HOST, 
+            port=settings.MCP_SERVER_PORT, 
+            log_level="info"
+        )
+    else:
+        print("Authentication: Disabled (No API_KEY set)", flush=True)
+        print("Press Ctrl+C to stop...", flush=True)
+        mcp.run(transport=transport, **kwargs)
 
